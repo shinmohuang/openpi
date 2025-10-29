@@ -1,0 +1,225 @@
+{
+    "codebase_version": "v2.1",
+    "robot_type": "panda",
+    "total_episodes": 0,
+    "total_frames": 0,
+    "total_tasks": 0,
+    "total_videos": 0,
+    "total_chunks": 0,
+    "chunks_size": 1000,
+    "fps": 10,
+    "splits": {},
+    "data_path": "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet",
+    "video_path": "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4",
+    "features": {
+        "image": {
+            "dtype": "image",
+            "shape": [
+                128,
+                128,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channel"
+            ]
+        },
+        "image_right": {
+            "dtype": "image",
+            "shape": [
+                128,
+                128,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channel"
+            ]
+        },
+        "wrist_image": {
+            "dtype": "image",
+            "shape": [
+                128,
+                128,
+                3
+            ],
+            "names": [
+                "height",
+                "width",
+                "channel"
+            ]
+        },
+        "state": {
+            "dtype": "float32",
+            "shape": [
+                15
+            ],
+            "names": [
+                "state"
+            ]
+        },
+        "gripper_position": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": [
+                "gripper_position"
+            ]
+        },
+        "robot0_base_pos": {
+            "dtype": "float32",
+            "shape": [
+                3
+            ],
+            "names": [
+                "xyz"
+            ]
+        },
+        "robot0_base_quat": {
+            "dtype": "float32",
+            "shape": [
+                4
+            ],
+            "names": [
+                "xyzw"
+            ]
+        },
+        "robot0_eef_pos": {
+            "dtype": "float32",
+            "shape": [
+                3
+            ],
+            "names": [
+                "xyz"
+            ]
+        },
+        "robot0_eef_quat": {
+            "dtype": "float32",
+            "shape": [
+                4
+            ],
+            "names": [
+                "xyzw"
+            ]
+        },
+        "robot0_base_to_eef_pos": {
+            "dtype": "float32",
+            "shape": [
+                3
+            ],
+            "names": [
+                "xyz"
+            ]
+        },
+        "robot0_base_to_eef_quat": {
+            "dtype": "float32",
+            "shape": [
+                4
+            ],
+            "names": [
+                "xyzw"
+            ]
+        },
+        "robot0_gripper_qpos": {
+            "dtype": "float32",
+            "shape": [
+                2
+            ],
+            "names": [
+                "finger"
+            ]
+        },
+        "robot0_gripper_qvel": {
+            "dtype": "float32",
+            "shape": [
+                2
+            ],
+            "names": [
+                "finger_vel"
+            ]
+        },
+        "actions": {
+            "dtype": "float32",
+            "shape": [
+                12
+            ],
+            "names": [
+                "actions"
+            ]
+        },
+        "robot0_joint_pos": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "joint"
+            ]
+        },
+        "robot0_joint_pos_cos": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "joint_cos"
+            ]
+        },
+        "robot0_joint_pos_sin": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "joint_sin"
+            ]
+        },
+        "robot0_joint_vel": {
+            "dtype": "float32",
+            "shape": [
+                7
+            ],
+            "names": [
+                "joint_vel"
+            ]
+        },
+        "timestamp": {
+            "dtype": "float32",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "frame_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "episode_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        },
+        "task_index": {
+            "dtype": "int64",
+            "shape": [
+                1
+            ],
+            "names": null
+        }
+    }
+}

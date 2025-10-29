@@ -155,9 +155,52 @@ def train_step(
 
     # Filter out frozen params.
     diff_state = nnx.DiffState(0, config.trainable_filter)
-    loss, grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(model, train_rng, observation, actions)
+    accum_steps = config.accumulate_gradients
+
+    if accum_steps == 1:
+        loss, grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(model, train_rng, observation, actions)
+    else:
+        def reshape_batch(x):
+            if x is None:
+                return None
+            leading = x.shape[0]
+            if leading % accum_steps != 0:
+                raise ValueError(
+                    f"Local batch size {leading} must be divisible by accumulate_gradients={accum_steps}"
+                )
+            return x.reshape((accum_steps, leading // accum_steps) + x.shape[1:])
+
+        observation_chunks = jax.tree.map(reshape_batch, observation)
+        actions_chunks = reshape_batch(actions)
+
+        params = state.params.filter(config.trainable_filter)
+        grad_init = jax.tree.map(jnp.zeros_like, params)
+        loss_init = jnp.asarray(0.0, dtype=jnp.float32)
+        micro_rngs = jax.random.split(train_rng, accum_steps)
+
+        def accumulate_micro(carry, inputs):
+            grad_acc, loss_acc = carry
+            micro_rng, micro_obs, micro_actions = inputs
+            micro_loss, micro_grads = nnx.value_and_grad(loss_fn, argnums=diff_state)(
+                model, micro_rng, micro_obs, micro_actions
+            )
+            grad_acc = jax.tree.map(lambda a, b: a + b, grad_acc, micro_grads)
+            loss_acc = loss_acc + micro_loss
+            return (grad_acc, loss_acc), None
+
+        (grad_sum, loss_sum), _ = jax.lax.scan(
+            accumulate_micro,
+            (grad_init, loss_init),
+            (micro_rngs, observation_chunks, actions_chunks),
+        )
+        grads = jax.tree.map(lambda x: x / accum_steps, grad_sum)
+        loss = loss_sum / accum_steps
 
     params = state.params.filter(config.trainable_filter)
+    action_min = jnp.min(actions)
+    action_max = jnp.max(actions)
+    action_mean = jnp.mean(actions)
+    action_std = jnp.std(actions)
     updates, new_opt_state = state.tx.update(grads, state.opt_state, params)
     new_params = optax.apply_updates(params, updates)
 
@@ -187,6 +230,10 @@ def train_step(
         "loss": loss,
         "grad_norm": optax.global_norm(grads),
         "param_norm": optax.global_norm(kernel_params),
+        "actions/min": action_min,
+        "actions/max": action_max,
+        "actions/mean": action_mean,
+        "actions/std": action_std,
     }
     return new_state, info
 
@@ -198,6 +245,13 @@ def main(config: _config.TrainConfig):
     if config.batch_size % jax.device_count() != 0:
         raise ValueError(
             f"Batch size {config.batch_size} must be divisible by the number of devices {jax.device_count()}."
+        )
+    if config.accumulate_gradients < 1:
+        raise ValueError("accumulate_gradients must be >= 1")
+    local_batch = config.batch_size // jax.device_count()
+    if local_batch % config.accumulate_gradients != 0:
+        raise ValueError(
+            f"Per-device batch size {local_batch} must be divisible by accumulate_gradients={config.accumulate_gradients}."
         )
 
     jax.config.update("jax_compilation_cache_dir", str(epath.Path("~/.cache/jax").expanduser()))
@@ -216,6 +270,8 @@ def main(config: _config.TrainConfig):
         resume=config.resume,
     )
     init_wandb(config, resuming=resuming, enabled=config.wandb_enabled)
+
+    lr_schedule_fn = config.lr_schedule.create()
 
     data_loader = _data_loader.create_data_loader(
         config,
@@ -265,7 +321,10 @@ def main(config: _config.TrainConfig):
             reduced_info = jax.device_get(jax.tree.map(jnp.mean, stacked_infos))
             info_str = ", ".join(f"{k}={v:.4f}" for k, v in reduced_info.items())
             pbar.write(f"Step {step}: {info_str}")
-            wandb.log(reduced_info, step=step)
+            log_payload = dict(reduced_info)
+            log_payload.setdefault("lr", float(lr_schedule_fn(step)))
+            log_payload.setdefault("tokens", int(step * config.batch_size))
+            wandb.log(log_payload, step=step)
             infos = []
         batch = next(data_iter)
 

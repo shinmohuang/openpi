@@ -1,0 +1,28 @@
+# Minimal client-side dependencies to run RoboCasa + openpi-client
+# Pin versions to reduce binary compatibility issues.
+
+# Core runtime
+numpy>=1.23,<2.0
+opencv-python>=4.8
+
+# Mujoco (robosuite/robocasa are installed from local sources)
+mujoco>=3.2.6
+
+# Optional: visualization / debugging
+matplotlib>=3.7
+imageio[ffmpeg]>=2.31
+termcolor>=2.3
+
+# simple_client dependencies
+polars>=0.20
+rich>=13
+tqdm>=4.66
+tyro>=0.9.5
+typeguard>=4.0.0
+
+# openpi-client runtime deps (since we use PYTHONPATH for source)
+dm-tree>=0.1.8
+msgpack>=1.0.5
+pillow>=9.0.0
+tree>=0.2.4
+websockets>=11.0

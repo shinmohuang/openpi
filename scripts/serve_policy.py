@@ -51,6 +51,8 @@ class Args:
     port: int = 8000
     # Record the policy's behavior for debugging.
     record: bool = False
+    # If True, print a summary of each model inference to stdout (for debugging).
+    log_inference: bool = False
 
     # Specifies how to load the policy. If not provided, the default policy for the environment will be used.
     policy: Checkpoint | Default = dataclasses.field(default_factory=Default)
@@ -74,10 +76,9 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
         config="pi05_libero",
         dir="gs://openpi-assets/checkpoints/pi05_libero",
     ),
-    # RoboCasa 作为客户端环境时，通常复用 DROID 策略与观测模式
     EnvMode.ROBOCASA: Checkpoint(
-        config="pi05_droid",
-        dir="gs://openpi-assets/checkpoints/pi05_droid",
+        config="pi05_robocasa_pandamobile_lora",
+        dir="/LOCAL2/hxm826/openpi/checkpoints/pi05_robocasa_pandamobile_lora/lora_norm_1/49999",
     ),
 }
 
@@ -119,6 +120,7 @@ def main(args: Args) -> None:
         host="0.0.0.0",
         port=args.port,
         metadata=policy_metadata,
+        log_inference=args.log_inference,
     )
     server.serve_forever()
 

@@ -137,18 +137,24 @@ def create_torch_dataset(
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
 
-    dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
-    dataset = lerobot_dataset.LeRobotDataset(
-        data_config.repo_id,
-        delta_timestamps={
-            key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
-        },
-    )
+    repo_ids = [repo_id, *data_config.extra_repo_ids]
 
-    if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+    def build_dataset(rid: str) -> Dataset:
+        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(rid)
+        base_dataset = lerobot_dataset.LeRobotDataset(
+            rid,
+            delta_timestamps={
+                key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
+        )
+        if data_config.prompt_from_task:
+            return TransformedDataset(base_dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+        return base_dataset
 
-    return dataset
+    datasets = [build_dataset(rid) for rid in repo_ids]
+    if len(datasets) == 1:
+        return datasets[0]
+    return ConcatDataset(datasets)
 
 
 def create_rlds_dataset(
@@ -538,3 +544,25 @@ class DataLoaderImpl(DataLoader):
     def __iter__(self):
         for batch in self._data_loader:
             yield _model.Observation.from_dict(batch), batch["actions"]
+class ConcatDataset(Dataset[T_co]):
+    """Concatenate multiple datasets exposing a single indexable dataset."""
+
+    def __init__(self, datasets: Sequence[Dataset[T_co]]):
+        if not datasets:
+            raise ValueError("ConcatDataset requires at least one dataset")
+        self._datasets = list(datasets)
+        lengths = [len(ds) for ds in self._datasets]
+        self._cumulative = np.cumsum(lengths)
+
+    def __len__(self) -> int:
+        return int(self._cumulative[-1])
+
+    def __getitem__(self, index: SupportsIndex) -> T_co:
+        idx = int(index)
+        if idx < 0:
+            idx += len(self)
+        if idx < 0 or idx >= len(self):
+            raise IndexError("index out of range")
+        dataset_idx = int(np.searchsorted(self._cumulative, idx, side="right"))
+        prev_cum = 0 if dataset_idx == 0 else int(self._cumulative[dataset_idx - 1])
+        return self._datasets[dataset_idx][idx - prev_cum]

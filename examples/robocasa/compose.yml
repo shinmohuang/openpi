@@ -1,0 +1,38 @@
+# Launch the multi-venv RoboCasa + OpenPI runtime in a single container.
+# Usage:
+#   SERVER_ARGS="--env ROBOCASA" CLIENT_ARGS="--host 127.0.0.1 --port 8000" \
+#   docker compose -f examples/robocasa/compose.yml up --build -d
+# Then attach an interactive shell:
+#   docker compose -f examples/robocasa/compose.yml exec robocasa-runtime /bin/bash
+
+services:
+  robocasa-runtime:
+    image: openpi-robocasa:multi
+    build:
+      context: ../..
+      dockerfile: examples/robocasa/Dockerfile
+    init: true
+    tty: true
+    stdin_open: true
+    privileged: true
+    network_mode: host
+    volumes:
+      - ../../:/app
+      - /LOCAL2/hxm826/openpi/rollouts:/LOCAL2/hxm826/openpi/rollouts
+      - /LOCAL2/hxm826/openpi/cache:/LOCAL2/hxm826/openpi/cache
+      - /LOCAL2/hxm826/openpi/checkpoints:/LOCAL2/hxm826/openpi/checkpoints
+      - /LOCAL2/hxm826/robocasa/datasets:/LOCAL2/hxm826/robocasa/datasets:ro
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=${MUJOCO_GL:-osmesa}
+      - SERVER_ARGS
+      - CLIENT_ARGS
+    command: [ "/bin/bash", "-lc", "while true; do sleep 3600; done" ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]

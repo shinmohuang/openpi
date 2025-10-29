@@ -20,6 +20,7 @@ import openpi.models.tokenizer as _tokenizer
 import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
+import openpi.policies.robocasa_policy as robocasa_policy
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
 import openpi.training.droid_rlds_dataset as droid_rlds_dataset
@@ -64,6 +65,8 @@ class AssetsConfig:
 class DataConfig:
     # LeRobot repo id. If None, fake data will be created.
     repo_id: str | None = None
+    # Additional LeRobot repo ids that will be concatenated with the main repo.
+    extra_repo_ids: Sequence[str] = ()
     # Directory within the assets directory containing the data assets.
     asset_id: str | None = None
     # Contains precomputed normalization stats. If None, normalization will not be performed.
@@ -214,11 +217,15 @@ class SimpleDataConfig(DataConfigFactory):
     data_transforms: tyro.conf.Suppress[GroupFactory] = dataclasses.field(default_factory=GroupFactory)
     # Factory for the model transforms.
     model_transforms: tyro.conf.Suppress[GroupFactory] = dataclasses.field(default_factory=ModelTransformFactory)
+    # Optional additional repo ids to concatenate with the primary dataset.
+    extra_repo_ids: Sequence[str] = ()
 
     @override
     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        base = self.create_base_config(assets_dirs, model_config)
         return dataclasses.replace(
-            self.create_base_config(assets_dirs, model_config),
+            base,
+            extra_repo_ids=tuple(self.extra_repo_ids),
             data_transforms=self.data_transforms(model_config),
             model_transforms=self.model_transforms(model_config),
         )
@@ -519,6 +526,9 @@ class TrainConfig:
     # Used to pass metadata to the policy server.
     policy_metadata: dict[str, Any] | None = None
 
+    # Number of microbatches to accumulate before applying an optimizer update.
+    accumulate_gradients: int = 1
+
     # If the value is greater than 1, FSDP will be enabled and shard across number of specified devices; overall
     # device memory will be reduced but training could potentially be slower.
     # eg. if total device is 4 and fsdp devices is 2; then the model will shard to 2 devices and run
@@ -630,6 +640,109 @@ _CONFIGS = [
                 prompt_from_task=True,
             ),
         ),
+    ),
+    TrainConfig(
+        name="pi05_robocasa_pandamobile",
+        model=pi0_config.Pi0Config(action_dim=12, action_horizon=15, max_token_len=120, pi05=True),
+        data=SimpleDataConfig(
+            repo_id="openpi_robocasa/robocasa_v01_single",
+            extra_repo_ids=("openpi_robocasa/robocasa_v01_multi",),
+            assets=AssetsConfig(asset_id="pandamobile_human"),
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[robocasa_policy.RobocasaInputs(model_type=model.model_type)],
+                outputs=[robocasa_policy.RobocasaOutputs()],
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                repack_transforms=_transforms.Group(
+                    inputs=[
+                        _transforms.RepackTransform(
+                            {
+                                "observation/image": "image",
+                                # "observation/image_right": "image_right",
+                                "observation/wrist_image": "wrist_image",
+                                "observation/state": "state",
+                                "actions": "actions",
+                                "prompt": "prompt",
+                            }
+                        )
+                    ]
+                ),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params",
+        ),
+        batch_size=6,
+        fsdp_devices=2,
+        accumulate_gradients=3,
+        ema_decay=None,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=5_000,
+            peak_lr=1e-5,
+            decay_steps=1_000_000,
+            decay_lr=2e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        num_train_steps=1_000_000
+
+    ),
+    TrainConfig(
+        name="pi05_robocasa_pandamobile_lora",
+        model=pi0_config.Pi0Config(
+            action_horizon=15,
+            pi05=True,
+            max_token_len=250,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=SimpleDataConfig(
+            repo_id="openpi_robocasa/robocasa_v01_single",
+            extra_repo_ids=("openpi_robocasa/robocasa_v01_multi",),
+            assets=AssetsConfig(asset_id="pandamobile_human"),
+            data_transforms=lambda model: _transforms.Group(
+                inputs=[robocasa_policy.RobocasaInputs(model_type=model.model_type)],
+                outputs=[robocasa_policy.RobocasaOutputs()],
+            ),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                repack_transforms=_transforms.Group(
+                    inputs=[
+                        _transforms.RepackTransform(
+                            {
+                                "observation/image": "image",
+                                "observation/image_right": "image_right",
+                                "observation/wrist_image": "wrist_image",
+                                "observation/state": "state",
+                                "actions": "actions",
+                                "prompt": "prompt",
+                            }
+                        )
+                    ]
+                ),
+            ),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params",
+        ),
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=15,
+            pi05=True,
+            max_token_len=250,
+            paligemma_variant="gemma_2b_lora",
+            # action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        ema_decay=None,
+        batch_size=36, #36
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=5e-5,
+            decay_steps=30_000,
+            decay_lr=5e-6,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        num_train_steps=100_000,
+        num_workers=16,
     ),
     #
     # Fine-tuning Libero configs.

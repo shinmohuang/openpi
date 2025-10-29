@@ -1,0 +1,60 @@
+services:
+  robocasa-client:
+    build:
+      context: ../..
+      dockerfile: examples/robocasa/Dockerfile
+      args:
+        # Bump this to force dependency layer rebuild
+        DEPS_BUST: "2025-10-16-3"
+        # Install OSMesa / GL deps for MuJoCo
+        INSTALL_APT_DEPS: "1"
+    container_name: openpi-robocasa
+    depends_on:
+      - openpi_server
+    network_mode: host
+    ipc: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+    environment:
+      - MUJOCO_GL=osmesa
+      - CLIENT_ARGS=${CLIENT_ARGS:- --env ROBOCASA --port 8000}
+      - PYTHONUNBUFFERED=1
+      - OPENPI_HOST=${OPENPI_HOST:-localhost}
+      - OPENPI_PORT=${OPENPI_PORT:-8000}
+      - NUM_STEPS=${NUM_STEPS:-20}
+    volumes:
+      - ../../:/app
+      - /LOCAL2/hxm826/openpi/rollouts:/LOCAL2/hxm826/openpi/rollouts
+    working_dir: /app
+    command: [ "/.venv/bin/python", "examples/simple_client/main.py", "--env", "ROBOCASA", "--host", "${OPENPI_HOST:-localhost}", "--port", "${OPENPI_PORT:-8000}", "--num-steps", "${NUM_STEPS:-20}" ]
+
+  openpi_server:
+    image: openpi_server
+    build:
+      context: ../..
+      dockerfile: scripts/docker/serve_policy.Dockerfile
+    init: true
+    tty: true
+    network_mode: host
+    volumes:
+      - ../../:/app
+      - openpi_assets:/openpi_assets
+    environment:
+      - SERVER_ARGS
+      - OPENPI_DATA_HOME=/openpi_assets
+      - IS_DOCKER=true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [ gpu ]
+
+volumes:
+  openpi_assets:

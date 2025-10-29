@@ -86,7 +86,7 @@ def create_rlds_dataloader(
     return data_loader, num_batches
 
 
-def main(config_name: str, max_frames: int | None = None):
+def main(config_name: str, max_frames: int | None = None, robocasa: bool = False):
     config = _config.get_config(config_name)
     data_config = config.data.create(config.assets_dirs, config.model)
 
@@ -100,15 +100,38 @@ def main(config_name: str, max_frames: int | None = None):
         )
 
     keys = ["state", "actions"]
-    stats = {key: normalize.RunningStats() for key in keys}
+    running_stats = {key: normalize.RunningStats() for key in keys}
 
     for batch in tqdm.tqdm(data_loader, total=num_batches, desc="Computing stats"):
         for key in keys:
-            stats[key].update(np.asarray(batch[key]))
+            running_stats[key].update(np.asarray(batch[key]))
 
-    norm_stats = {key: stats.get_statistics() for key, stats in stats.items()}
+    norm_stats: dict[str, normalize.NormStats] = {}
+    min_quantile_span = 1e-3
+    for key, stats in running_stats.items():
+        stats_for_key = stats.get_statistics()
+        if robocasa and stats_for_key.q01 is not None and stats_for_key.q99 is not None:
+            span = stats_for_key.q99 - stats_for_key.q01
+            if np.any(np.abs(span) < min_quantile_span):
+                mask = np.abs(span) < min_quantile_span
+                # Expand the quantile window around the mean to avoid near-zero ranges.
+                mean = stats_for_key.mean
+                fallback_low = mean - 1.0
+                fallback_high = mean + 1.0
+                stats_for_key.q01 = np.where(mask, fallback_low, stats_for_key.q01)
+                stats_for_key.q99 = np.where(mask, fallback_high, stats_for_key.q99)
+                dims = np.where(mask)[0].tolist()
+                print(
+                    f"Warning: quantile span too small for '{key}' dimensions {dims}; "
+                    "expanded window to mean ± 1.0."
+                )
+        norm_stats[key] = stats_for_key
 
-    output_path = config.assets_dirs / data_config.repo_id
+    asset_id = data_config.asset_id or data_config.repo_id
+    if asset_id is None:
+        raise ValueError("Data config must define either asset_id or repo_id to determine output path.")
+
+    output_path = config.assets_dirs / asset_id
     print(f"Writing stats to: {output_path}")
     normalize.save(output_path, norm_stats)
 

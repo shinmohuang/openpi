@@ -4,6 +4,8 @@ import logging
 import time
 import traceback
 
+import numpy as np
+
 from openpi_client import base_policy as _base_policy
 from openpi_client import msgpack_numpy
 import websockets.asyncio.server as _server
@@ -24,11 +26,13 @@ class WebsocketPolicyServer:
         host: str = "0.0.0.0",
         port: int | None = None,
         metadata: dict | None = None,
+        log_inference: bool = False,
     ) -> None:
         self._policy = policy
         self._host = host
         self._port = port
         self._metadata = metadata or {}
+        self._log_inference = log_inference
         logging.getLogger("websockets.server").setLevel(logging.INFO)
 
     def serve_forever(self) -> None:
@@ -61,6 +65,10 @@ class WebsocketPolicyServer:
                 action = self._policy.infer(obs)
                 infer_time = time.monotonic() - infer_time
 
+                if self._log_inference:
+                    logger.info("Inference output summary: %s", _summarize_action(action))
+                    logger.info("Inference action payload: %s", action)
+
                 action["server_timing"] = {
                     "infer_ms": infer_time * 1000,
                 }
@@ -88,3 +96,31 @@ def _health_check(connection: _server.ServerConnection, request: _server.Request
         return connection.respond(http.HTTPStatus.OK, "OK\n")
     # Continue with the normal request handling.
     return None
+
+
+def _summarize_action(action: dict) -> dict:
+    """Create a lightweight human-readable summary of the action payload."""
+
+    def summarize_value(value):
+        if isinstance(value, dict):
+            return {k: summarize_value(v) for k, v in value.items()}
+        try:
+            arr = np.asarray(value)
+        except Exception:
+            return value
+        if arr.ndim == 0:
+            return float(arr)
+        if arr.size <= 16:
+            return arr.tolist()
+        return {
+            "shape": list(arr.shape),
+            "min": float(np.min(arr)),
+            "max": float(np.max(arr)),
+        }
+
+    summary = {}
+    for key, value in action.items():
+        if key == "server_timing":
+            continue
+        summary[key] = summarize_value(value)
+    return summary

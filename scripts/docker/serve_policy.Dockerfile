@@ -13,7 +13,35 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.1 /uv /uvx /bin/
 WORKDIR /app
 
 # Needed because LeRobot uses git-lfs.
-RUN apt-get update && apt-get install -y git git-lfs linux-headers-generic build-essential clang
+# RUN apt-get update && apt-get install -y git git-lfs linux-headers-generic build-essential clang
+# 先最小化装 ca/curl/gnupg（允许临时不严格校验，仅此一步）
+RUN set -eux; \
+    apt-get update -o Acquire::AllowInsecureRepositories=true; \
+    apt-get install -y --no-install-recommends \
+    ca-certificates curl gnupg; \
+    rm -rf /var/lib/apt/lists/*
+
+# 刷新 Ubuntu 的仓库签名 key（ubuntu-keyring）
+# （只在上一步临时放宽校验后进行，装完恢复正常）
+RUN set -eux; \
+    apt-get update -o Acquire::AllowInsecureRepositories=true; \
+    apt-get install -y --no-install-recommends ubuntu-keyring; \
+    rm -rf /var/lib/apt/lists/*
+
+# 如果你不需要在容器里 apt 装 CUDA 包，直接删掉任何 cuda/nvidia 源更稳
+# rm -f /etc/apt/sources.list.d/cuda*.list /etc/apt/sources.list.d/nvidia*.list || true
+
+# 现在恢复“正常校验”再装你要的包
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y --no-install-recommends \
+    git git-lfs build-essential clang; \
+    git lfs install --skip-smudge; \
+    git config --global filter.lfs.required true; \
+    git config --global filter.lfs.smudge "git-lfs smudge --skip -- %f"; \
+    git config --global filter.lfs.process "git-lfs filter-process --skip"; \
+    rm -rf /var/lib/apt/lists/*
+
 
 # Copy from the cache instead of linking since it's a mounted volume
 ENV UV_LINK_MODE=copy
@@ -35,4 +63,4 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src/openpi/models_pytorch/transformers_replace/ /tmp/transformers_replace/
 RUN /.venv/bin/python -c "import transformers; print(transformers.__file__)" | xargs dirname | xargs -I{} cp -r /tmp/transformers_replace/* {} && rm -rf /tmp/transformers_replace
 
-CMD /bin/bash -c "uv run scripts/serve_policy.py $SERVER_ARGS"
+CMD /bin/bash -c "uv run -- scripts/serve_policy.py $SERVER_ARGS"
