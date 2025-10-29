@@ -18,6 +18,7 @@ class EnvMode(enum.Enum):
     ALOHA_SIM = "aloha_sim"
     DROID = "droid"
     LIBERO = "libero"
+    ROBOCASA = "robocasa"
 
 
 @dataclasses.dataclass
@@ -72,6 +73,11 @@ DEFAULT_CHECKPOINT: dict[EnvMode, Checkpoint] = {
     EnvMode.LIBERO: Checkpoint(
         config="pi05_libero",
         dir="gs://openpi-assets/checkpoints/pi05_libero",
+    ),
+    # RoboCasa 作为客户端环境时，通常复用 DROID 策略与观测模式
+    EnvMode.ROBOCASA: Checkpoint(
+        config="pi05_droid",
+        dir="gs://openpi-assets/checkpoints/pi05_droid",
     ),
 }
 
